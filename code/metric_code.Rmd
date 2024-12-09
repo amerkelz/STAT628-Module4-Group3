@@ -1,0 +1,130 @@
+---
+title: "metric_generation"
+author: "Amy Merkelz"
+date: "2024-12-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(readr)
+library(tidyverse)
+library(wordcloud)
+library(tidytext)
+library(tm)
+library(quanteda)
+library(dplyr)
+library(tokenizers)
+library(stopwords)
+library(ggplot2)
+
+# use svd package to do same as prcomp/princomp faster & with less memory? 
+```
+
+
+```{r tokenization}
+episode_data <- read.csv('episode_data_clean.csv')
+head(episode_data)
+
+#first tokenize all words - then determine the top 200 most common words in the descriptions and names to evaluate.
+
+episode_data$tokenized <- Corpus(VectorSource(episode_data$clean_text))
+episode_data$tokenized <- tm_map(episode_data$tokenized, removePunctuation)
+episode_data$tokenized <- tm_map(episode_data$tokenized, removeNumbers)
+episode_data$tokenized <- tm_map(episode_data$tokenized, removeWords, stopwords("en"))
+episode_data$tokenized <- 
+tdm_mat <- as.matrix(DocumentTermMatrix(episode_data$tokenized))
+```
+
+```{r}
+tdm_df <- as.data.frame(tdm_mat) #takes several minutes to run
+print("tdm_df is created!")
+```
+
+```{r}
+#remove all cols from tm_df that are not in top words list
+all_sums <- colSums(tdm_df)
+sums_df <- data.frame(all_sums)
+sums_df <- cbind(word = rownames(sums_df), sums_df)
+sums_df <- sums_df[order(sums_df$all_sums, decreasing=TRUE),]
+word_list <- c("visit","episode", "podcast", "podcasts", "episode", "episodes", "new", "get", "free", "  ", "“", "”", "  ", "adchoices","  ","’re","’s","–","—"," follow", "podcastchoices", "com",  "subscribe", "•", "’ll")
+sums_df <- sums_df[!sums_df$word %in% word_list,]
+top_200_words <- sums_df[1:202,c(1)]
+top_200_words
+
+top_200_words_2 <- c("learn", "choices", "instagram", "trump", "youtube", 
+                   "one", "can", "megaphone", "life", "use", "support", 
+                   "book", "time", "today", "code", "first", "media", 
+                   "sponsors", "read", "show", "times", "spotify", "next", 
+                   "twitter", "apple", "privacy", "david", "candace", "people", 
+                   "like", "harris", "social", "best", "daily", "please", 
+                   "now", "follow", "just", "subscribe", "york", "video", 
+                   "website", "also", "listen", "stories", "kamala", "discuss", 
+                   "full", "minnect", "connect", "world", "story", "health", 
+                   "kids", "news", "bet", "reading", "see", "check", "help", 
+                   "want", "aloud", "day", "information", "tiktok", "find", 
+                   "theo", "tickets", "business", "talk", "friends", "author", 
+                   "music", "year", "brain", "channel", "make", "know", "bobby", 
+                   "years", "politics", "links", "morning", "mel", "way", 
+                   "policy", "andrew", "bad", "crime", "week", "sleep", "two", 
+                   "books", "need", "debate", "thank", "part", "murder", 
+                   "president", "latest", "back", "call", "hear", "donald", 
+                   "brew", "american", "university", "purchase", "things", 
+                   "death", "last", "case", "even", "much", "whether", "biden", 
+                   "man", "questions", "live", "election", "patrick", "right", 
+                   "month", "real", "war", "watch", "white", "ever", "including", 
+                   "morgan", "director", "special", "research", "enjoy", "todays", 
+                   "love", "body", "valuetainment", "text", "ceo", "merch", 
+                   "exclusive", "advice", "former", "family", "future", "work", 
+                   "culture", "available", "secret", "house", "every", "found", 
+                   "listener", "state", "shawn", "resources", "pbd", "behind", 
+                   "host", "club", "little", "america", "megyn", "tour", "made", 
+                   "past", "many", "press", "ryan", "old", "early", "truth", 
+                   "big", "israel", "california", "trial", "patreon", "huberman", 
+                   "online", "click", "going", "founder", "police", "march", 
+                   "moves", "friday", "dont", "kelly", "self", "november", "may", 
+                   "campaign", "young", "along", "months", "sign", "school", 
+                   "important", "facebook")
+
+
+#manually remove things from list that somehow didn't filter out with above words list
+top_200_words <-top_200_words[-c(42,194)]
+top_200_words
+```
+
+```{r}
+write.csv(top_200_words,"top_200_words.csv") #save off just in case
+#reduced_tdm_df <- tdm_df[c(top_500_words)]  
+reduced_tdm_df <- tdm_df[c(top_200_words)]
+```
+
+```{r}
+#run prcomp
+pca_result <- prcomp(reduced_tdm_df)
+summary(pca_result)
+
+```
+
+
+```{r}
+#visualize
+color_groups <- factor(episode_data$type)
+pc_df <- pca_result$x[,c(1,2)]
+
+
+cbPalette <- c("#000000", "#E69F00", "#7ff0d0", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7","#f71a0a","#75f70a","#a40af7","#fc3f97")
+pca_viz <- ggplot(pc_df, aes(x=pc_df[,1],y=pc_df[,2],color=color_groups)) + geom_point() + labs(color="Podcast Types", x = colnames(pc_df)[1], y = colnames(pc_df)[2]) + scale_colour_manual(values=cbPalette)
+pca_viz
+
+# investigate a PC's major contributing words
+pc_loading_vals <- data.frame(pca_result$rotation[,1])
+pc_loading_vals <- cbind(word = rownames(pc_loading_vals), pc_loading_vals)
+pc_loading_vals$magnitude <- abs(pc_loading_vals$pca_result.rotation...1.)
+pc_loading_vals[order(pc_loading_vals$pca_result.rotation...1., decreasing = TRUE),]
+
+saveRDS(pca_result, "pca_result.rds")
+ggsave("figure1.png",plot=pca_viz)
+```
+
+
